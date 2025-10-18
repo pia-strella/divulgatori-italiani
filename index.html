@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Divulgatori Scientifici - Grafo Interattivo</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            overflow: hidden;
+        }
+        
+        #container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+        
+        svg {
+            width: 100%;
+            height: 100%;
+        }
+        
+        .node {
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .node:hover {
+            stroke-width: 4px;
+        }
+        
+        .link {
+            stroke: rgba(255, 255, 255, 0.2);
+            stroke-width: 1.5;
+        }
+        
+        .label {
+            font-size: 12px;
+            font-weight: 600;
+            fill: white;
+            text-anchor: middle;
+            pointer-events: none;
+            text-shadow: 1px 1px 3px rgba(0,0,0,0.5);
+        }
+        
+        #tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            padding: 12px 16px;
+            border-radius: 8px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+            font-size: 14px;
+            max-width: 250px;
+            backdrop-filter: blur(10px);
+            z-index: 1000;
+        }
+        
+        #tooltip.visible {
+            opacity: 1;
+        }
+        
+        #legend {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            color: white;
+            backdrop-filter: blur(10px);
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        
+        #legend h3 {
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin: 8px 0;
+            font-size: 13px;
+        }
+        
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            margin-right: 10px;
+            border: 2px solid white;
+            flex-shrink: 0;
+        }
+        
+        #info {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 13px;
+            backdrop-filter: blur(10px);
+        }
+        
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            padding: 30px 50px;
+            border-radius: 15px;
+            font-size: 18px;
+            backdrop-filter: blur(10px);
+            z-index: 2000;
+        }
+        
+        #loading.hidden {
+            display: none;
+        }
+        
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid white;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto 0;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        #error {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(220, 53, 69, 0.95);
+            color: white;
+            padding: 30px;
+            border-radius: 15px;
+            max-width: 500px;
+            text-align: center;
+            backdrop-filter: blur(10px);
+            z-index: 2000;
+            display: none;
+        }
+        
+        #error.visible {
+            display: block;
+        }
+        
+        #error h2 {
+            margin-bottom: 15px;
+        }
+        
+        #error p {
+            margin: 10px 0;
+            line-height: 1.6;
+        }
+        
+        #error code {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <svg id="graph"></svg>
+        <div id="tooltip"></div>
+        <div id="legend">
+            <h3>Aree Scientifiche</h3>
+            <div id="legend-items"></div>
+        </div>
+        <div id="info">
+            Trascina i nodi • Passa sopra per info • Click per aprire Instagram
+        </div>
+        <div id="loading">
+            Caricamento dati...
+            <div class="spinner"></div>
+        </div>
+        <div id="error">
+            <h2>⚠️ Errore di configurazione</h2>
+            <p>Non riesco a caricare i dati dal Google Sheet.</p>
+            <p>Assicurati di aver:</p>
+            <p>1. Pubblicato il foglio come CSV</p>
+            <p>2. Inserito l'URL corretto nel codice</p>
+            <p id="error-detail"></p>
+        </div>
+    </div>
+
+    <script>
+        // ⚠️ INSERISCI QUI L'URL DEL TUO GOOGLE SHEET PUBBLICATO COME CSV
+        // Esempio: https://docs.google.com/spreadsheets/d/e/2PACX-xxx/pub?output=csv
+        const SHEET_URL = 'TUO_URL_QUI';
+        
+        // Se vuoi usare dati di esempio per testare, cambia questo in true
+        const USE_DEMO_DATA = true;
+
+        // Dati di esempio (usati solo se USE_DEMO_DATA = true)
+        const DEMO_DATA = `id,name,category,followers,instagram,collegamenti
+link4universe,Link4Universe,Fisica,500K+,link4universe,cernit;astrosamantha
+cernit,Adrian Fartade,Fisica,100K+,cern_it,link4universe
+astrosamantha,Samantha Cristoforetti,Fisica,2M+,astrosamantha,link4universe
+barbascura,Barbascura X,Biologia,300K+,barbascura,geopop;entropy
+geopop,GeoPop,Biologia,1M+,geopop,barbascura;entropy;dariobressanini;link4universe
+entropy,Entropy for Life,Biologia,150K+,entropy_for_life,barbascura;geopop
+mau_matematico,Maurizio Codogno,Matematica,50K+,mau_matematico,matematicapop
+matematicapop,Matematica Pop,Matematica,80K+,matematicapop,mau_matematico
+giopizzi,La Chimica per Tutti,Chimica,200K+,lachimica.pertut,dariobressanini
+dariobressanini,Dario Bressanini,Chimica,400K+,dariobressanini,giopizzi;geopop
+dottoremaeveroche,Dott. Maeveroche,Medicina,250K+,dottoremaeveroche,medicinainfamiglia
+medicinainfamiglia,Medicina in Famiglia,Medicina,180K+,medicinainfamiglia,dottoremaeveroche
+humanitasai,Humanitas AI,Tecnologia,120K+,humanitas.ai,disinformatico
+disinformatico,Il Disinformatico,Tecnologia,90K+,il_disinformatico,humanitasai`;
+
+        // Colori per categoria (puoi personalizzarli)
+        const categoryColors = {
+            'Fisica': '#FF6B6B',
+            'Biologia': '#4ECDC4',
+            'Matematica': '#FFE66D',
+            'Chimica': '#95E1D3',
+            'Medicina': '#FF8B94',
+            'Tecnologia': '#A8DADC',
+            'Astronomia': '#FFA07A',
+            'Psicologia': '#DDA0DD',
+            'Informatica': '#87CEEB',
+            'Geologia': '#F4A460'
+        };
+
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+        
+        const svg = d3.select('#graph');
+        const tooltip = d3.select('#tooltip');
+        const loading = document.getElementById('loading');
+        const errorDiv = document.getElementById('error');
+
+        let simulation, node, link, label, categoryPositions, categories, angleStep;
+
+        // Carica i dati
+        function loadData() {
+            if (USE_DEMO_DATA) {
+                console.log('📊 Usando dati di esempio...');
+                parseAndRender(DEMO_DATA);
+            } else {
+                if (SHEET_URL === 'TUO_URL_QUI') {
+                    showError('Devi inserire l\'URL del tuo Google Sheet nella variabile SHEET_URL');
+                    return;
+                }
+                
+                console.log('📡 Caricamento da Google Sheets...');
+                fetch(SHEET_URL)
+                    .then(response => {
+                        if (!response.ok) throw new Error('Impossibile caricare il foglio');
+                        return response.text();
+                    })
+                    .then(csvData => parseAndRender(csvData))
+                    .catch(error => {
+                        console.error('Errore:', error);
+                        showError(error.message);
+                    });
+            }
+        }
+
+        function showError(message) {
+            loading.classList.add('hidden');
+            errorDiv.classList.add('visible');
+            document.getElementById('error-detail').innerHTML = `<code>${message}</code>`;
+        }
+
+        function parseAndRender(csvData) {
+            Papa.parse(csvData, {
+                header: true,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    const data = processData(results.data);
+                    loading.classList.add('hidden');
+                    renderGraph(data);
+                },
+                error: function(error) {
+                    showError('Errore nel parsing CSV: ' + error.message);
+                }
+            });
+        }
+
+        function processData(rows) {
+            const nodes = [];
+            const links = [];
+            
+            rows.forEach(row => {
+                // Crea nodo
+                if (row.id && row.name && row.category) {
+                    nodes.push({
+                        id: row.id.trim(),
+                        name: row.name.trim(),
+                        category: row.category.trim(),
+                        followers: row.followers ? row.followers.trim() : 'N/A',
+                        instagram: row.instagram ? row.instagram.trim() : row.id.trim()
+                    });
+                    
+                    // Crea collegamenti (se presenti nella colonna 'collegamenti')
+                    if (row.collegamenti) {
+                        const targets = row.collegamenti.split(';').map(t => t.trim()).filter(t => t);
+                        targets.forEach(target => {
+                            links.push({
+                                source: row.id.trim(),
+                                target: target
+                            });
+                        });
+                    }
+                }
+            });
+            
+            console.log(`✅ Caricati ${nodes.length} divulgatori e ${links.length} collegamenti`);
+            return { nodes, links };
+        }
+
+        function renderGraph(data) {
+            // Calcola posizioni target per ogni categoria
+            categories = [...new Set(data.nodes.map(d => d.category))];
+            angleStep = (2 * Math.PI) / categories.length;
+            categoryPositions = {};
+            const radius = Math.min(width, height) * 0.3;
+            
+            categories.forEach((cat, i) => {
+                const angle = i * angleStep;
+                categoryPositions[cat] = {
+                    x: width / 2 + radius * Math.cos(angle),
+                    y: height / 2 + radius * Math.sin(angle)
+                };
+            });
+
+            // Crea la legenda
+            const legendItems = d3.select('#legend-items');
+            legendItems.selectAll('*').remove();
+            
+            categories.forEach(category => {
+                const color = categoryColors[category] || '#999999';
+                legendItems.append('div')
+                    .attr('class', 'legend-item')
+                    .html(`<div class="legend-color" style="background-color: ${color}"></div><span>${category}</span>`);
+            });
+
+            // Forza personalizzata per raggruppare per categoria
+            function forceCategory(alpha) {
+                data.nodes.forEach(node => {
+                    const target = categoryPositions[node.category];
+                    if (target) {
+                        node.vx += (target.x - node.x) * alpha * 0.3;
+                        node.vy += (target.y - node.y) * alpha * 0.3;
+                    }
+                });
+            }
+
+            // Simulazione fisica
+            simulation = d3.forceSimulation(data.nodes)
+                .force('link', d3.forceLink(data.links).id(d => d.id).distance(100))
+                .force('charge', d3.forceManyBody().strength(-300))
+                .force('center', d3.forceCenter(width / 2, height / 2))
+                .force('collision', d3.forceCollide().radius(50))
+                .force('category', forceCategory);
+
+            // Crea i collegamenti
+            link = svg.append('g')
+                .selectAll('line')
+                .data(data.links)
+                .join('line')
+                .attr('class', 'link');
+
+            // Crea i nodi
+            node = svg.append('g')
+                .selectAll('circle')
+                .data(data.nodes)
+                .join('circle')
+                .attr('class', 'node')
+                .attr('r', 25)
+                .attr('fill', d => categoryColors[d.category] || '#999999')
+                .attr('stroke', 'white')
+                .attr('stroke-width', 2)
+                .call(drag(simulation))
+                .on('mouseover', showTooltip)
+                .on('mouseout', hideTooltip)
+                .on('click', openInstagram);
+
+            // Etichette
+            label = svg.append('g')
+                .selectAll('text')
+                .data(data.nodes)
+                .join('text')
+                .attr('class', 'label')
+                .text(d => d.name);
+
+            // Aggiorna posizioni ad ogni tick
+            simulation.on('tick', () => {
+                link
+                    .attr('x1', d => d.source.x)
+                    .attr('y1', d => d.source.y)
+                    .attr('x2', d => d.target.x)
+                    .attr('y2', d => d.target.y);
+
+                node
+                    .attr('cx', d => d.x)
+                    .attr('cy', d => d.y);
+
+                label
+                    .attr('x', d => d.x)
+                    .attr('y', d => d.y + 45);
+            });
+        }
+
+        function showTooltip(event, d) {
+            tooltip
+                .html(`
+                    <strong>${d.name}</strong><br>
+                    Area: ${d.category}<br>
+                    Followers: ${d.followers}<br>
+                    <em>Click per aprire Instagram</em>
+                `)
+                .style('left', (event.pageX + 15) + 'px')
+                .style('top', (event.pageY - 15) + 'px')
+                .classed('visible', true);
+        }
+
+        function hideTooltip() {
+            tooltip.classed('visible', false);
+        }
+
+        function openInstagram(event, d) {
+            window.open(`https://instagram.com/${d.instagram}`, '_blank');
+        }
+
+        function drag(simulation) {
+            function dragstarted(event) {
+                if (!event.active) simulation.alphaTarget(0.3).restart();
+                event.subject.fx = event.subject.x;
+                event.subject.fy = event.subject.y;
+            }
+
+            function dragged(event) {
+                event.subject.fx = event.x;
+                event.subject.fy = event.y;
+            }
+
+            function dragended(event) {
+                if (!event.active) simulation.alphaTarget(0);
+                event.subject.fx = null;
+                event.subject.fy = null;
+            }
+
+            return d3.drag()
+                .on('start', dragstarted)
+                .on('drag', dragged)
+                .on('end', dragended);
+        }
+
+        // Responsive
+        window.addEventListener('resize', () => {
+            const newWidth = window.innerWidth;
+            const newHeight = window.innerHeight;
+            svg.attr('width', newWidth).attr('height', newHeight);
+            
+            if (categoryPositions && categories) {
+                const newRadius = Math.min(newWidth, newHeight) * 0.3;
+                categories.forEach((cat, i) => {
+                    const angle = i * angleStep;
+                    categoryPositions[cat] = {
+                        x: newWidth / 2 + newRadius * Math.cos(angle),
+                        y: newHeight / 2 + newRadius * Math.sin(angle)
+                    };
+                });
+                
+                if (simulation) {
+                    simulation.force('center', d3.forceCenter(newWidth / 2, newHeight / 2));
+                    simulation.alpha(0.3).restart();
+                }
+            }
+        });
+
+        // Avvia il caricamento
+        loadData();
+    </script>
+</body>
+</html>
